@@ -1,1 +1,64 @@
+import numpy as np
+import pandas as pd
+import networkx as nx
+from scipy.spatial.distance import mahalanobis
+from scipy.optimize import linprog
+from sklearn.preprocessing import StandardScaler
+
+# Step 1: Load and Preprocess Data
+data = {
+    "Patient": ["P1", "P2", "P3", "P4", "P5"],
+    "Treatment": [1, 0, 1, 0, 1],  # 1 = Treated, 0 = Control
+    "Pain": [7, 6, 8, 5, 9],
+    "Urgency": [3, 4, 3, 5, 2],
+    "Frequency": [5, 4, 6, 3, 7]
+}
+df = pd.DataFrame(data)
+
+# Step 2: Compute Mahalanobis Distance
+scaler = StandardScaler()
+features = scaler.fit_transform(df.iloc[:, 2:])
+inv_cov = np.linalg.inv(np.cov(features.T))
+def mahalanobis_distance(u, v):
+    return mahalanobis(u, v, inv_cov)
+
+distance_matrix = np.zeros((len(df), len(df)))
+for i in range(len(df)):
+    for j in range(len(df)):
+        if df.iloc[i]['Treatment'] != df.iloc[j]['Treatment']:
+            distance_matrix[i, j] = mahalanobis_distance(features[i], features[j])
+
+# Step 3: Solve Matching with Integer Programming
+num_pairs = min(df['Treatment'].sum(), len(df) - df['Treatment'].sum())
+row_ind, col_ind = np.unravel_index(np.argsort(distance_matrix, axis=None), distance_matrix.shape)
+matches = []
+treated_used = set()
+control_used = set()
+for r, c in zip(row_ind, col_ind):
+    if df.iloc[r]['Treatment'] == 1 and df.iloc[c]['Treatment'] == 0:
+        if r not in treated_used and c not in control_used:
+            matches.append((df.iloc[r]['Patient'], df.iloc[c]['Patient']))
+            treated_used.add(r)
+            control_used.add(c)
+    if len(matches) >= num_pairs:
+        break
+
+# Step 4: Perform Sensitivity Analysis
+def sensitivity_analysis(matches, bias_factor=1.5):
+    adjusted_results = []
+    for treated, control in matches:
+        treated_index = df[df['Patient'] == treated].index[0]
+        control_index = df[df['Patient'] == control].index[0]
+        diff = (features[treated_index] - features[control_index]) * bias_factor
+        adjusted_results.append(diff)
+    return np.array(adjusted_results)
+
+sensitivity_results = sensitivity_analysis(matches)
+
+# Display Results
+print("Matched Pairs:")
+for match in matches:
+    print(match)
+print("\nSensitivity Analysis Results:")
+print(sensitivity_results)
 
